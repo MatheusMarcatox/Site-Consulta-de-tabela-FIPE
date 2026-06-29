@@ -1,4 +1,14 @@
-const API_BASE = 'https://brasilapi.com.br/api/fipe';
+const API_BASE = 'https://fipe.parallelum.com.br/api/v2';
+
+const VEHICLE_TYPES = {
+  carros: 'cars',
+  motos: 'motorcycles',
+  caminhoes: 'trucks',
+};
+
+function getVehicleType(tipo) {
+  return VEHICLE_TYPES[tipo] || tipo;
+}
 
 const tipoSelect = document.getElementById('tipo');
 const marcaSelect = document.getElementById('marca');
@@ -100,13 +110,13 @@ async function loadMarcas(tipo) {
   setLoading(marcaSelect, true);
 
   try {
-    const marcas = await fetchApi(`${API_BASE}/marcas/v1/${tipo}`);
+    const marcas = await fetchApi(`${API_BASE}/${getVehicleType(tipo)}/brands`);
     populateSelect(
       marcaSelect,
       marcas,
       'Selecione...',
-      (item) => item.valor,
-      (item) => item.nome
+      (item) => item.code,
+      (item) => item.name
     );
   } catch (error) {
     setLoading(marcaSelect, false, 'Erro ao carregar marcas');
@@ -121,13 +131,13 @@ async function loadModelos(tipo, marca) {
   setLoading(modeloSelect, true);
 
   try {
-    const modelos = await fetchApi(`${API_BASE}/veiculos/v1/${tipo}/${marca}`);
+    const modelos = await fetchApi(`${API_BASE}/${getVehicleType(tipo)}/brands/${marca}/models`);
     populateSelect(
       modeloSelect,
       modelos,
       'Selecione...',
-      (_item, index) => index,
-      (item) => item.modelo
+      (item) => item.code,
+      (item) => item.name
     );
     codigoFipeInput.disabled = false;
   } catch (error) {
@@ -139,23 +149,26 @@ async function loadModelos(tipo, marca) {
 }
 
 async function loadAnosPorCodigoFipe(codigoFipe) {
+  const tipo = tipoSelect.value;
   precosCache = [];
   setLoading(anoSelect, true);
 
   try {
-    const precos = await fetchApi(`${API_BASE}/preco/v1/${codigoFipe}`);
+    const anos = await fetchApi(
+      `${API_BASE}/${getVehicleType(tipo)}/${encodeURIComponent(codigoFipe)}/years`
+    );
 
-    if (!Array.isArray(precos) || precos.length === 0) {
+    if (!Array.isArray(anos) || anos.length === 0) {
       throw new Error('Nenhum resultado encontrado para este código FIPE.');
     }
 
-    precosCache = precos;
+    precosCache = anos;
     populateSelect(
       anoSelect,
-      precos,
+      anos,
       'Selecione...',
-      (_item, index) => index,
-      (item) => `${item.anoModelo} — ${item.combustivel}`
+      (item) => item.code,
+      (item) => item.name
     );
   } catch (error) {
     setLoading(anoSelect, false, 'Código FIPE inválido ou indisponível');
@@ -211,10 +224,11 @@ consultaForm.addEventListener('submit', async (e) => {
   hideError();
   formResult.hidden = true;
 
+  const tipo = tipoSelect.value;
   const codigoFipe = codigoFipeInput.value.trim();
-  const anoIndex = anoSelect.value;
+  const yearId = anoSelect.value;
 
-  if (!tipoSelect.value || !marcaSelect.value || modeloSelect.value === '') {
+  if (!tipo || !marcaSelect.value || modeloSelect.value === '') {
     showError('Selecione tipo, marca e modelo.');
     return;
   }
@@ -224,7 +238,7 @@ consultaForm.addEventListener('submit', async (e) => {
     return;
   }
 
-  if (anoIndex === '') {
+  if (yearId === '') {
     showError('Selecione o ano/combustível do veículo.');
     return;
   }
@@ -232,18 +246,12 @@ consultaForm.addEventListener('submit', async (e) => {
   setSubmitLoading(true);
 
   try {
-    if (precosCache.length === 0) {
-      precosCache = await fetchApi(`${API_BASE}/preco/v1/${codigoFipe}`);
-    }
+    const resultado = await fetchApi(
+      `${API_BASE}/${getVehicleType(tipo)}/${encodeURIComponent(codigoFipe)}/years/${encodeURIComponent(yearId)}`
+    );
 
-    const resultado = precosCache[Number(anoIndex)];
-
-    if (!resultado) {
-      throw new Error('Resultado não encontrado para o ano selecionado.');
-    }
-
-    resultValue.textContent = resultado.valor;
-    resultDetails.textContent = `${resultado.marca} ${resultado.modelo} · ${resultado.anoModelo} · ${resultado.combustivel} · Ref: ${resultado.mesReferencia.trim()}`;
+    resultValue.textContent = resultado.price;
+    resultDetails.textContent = `${resultado.brand} ${resultado.model} · ${resultado.modelYear} · ${resultado.fuel} · Ref: ${resultado.referenceMonth}`;
     formResult.hidden = false;
     formResult.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (error) {
